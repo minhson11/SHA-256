@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gửi File An Toàn</title>
+  <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-100 to-white min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Chào bạn, {{ username }}</h1>
+      <a href="/logout" class="text-sm text-red-500 hover:underline">Đăng xuất</a>
+    </div>
+
+    <form id="sendFileForm" class="space-y-4">
+      <div>
+        <label for="receiver" class="block text-sm font-medium text-gray-700">Người nhận:</label>
+        <select id="receiver" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+          <option value="" disabled selected>-- Chọn người nhận --</option>
+          {% for u in users %}
+            {% if u != username %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="fileInput" class="block text-sm font-medium text-gray-700">Chọn file:</label>
+        <input type="file" id="fileInput" required class="mt-1 block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-green-600 file:text-white hover:file:bg-green-700" />
+      </div>
+
+      <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md transition duration-200">
+        📤 Gửi File
+      </button>
+    </form>
+
+    <div id="senderHash" class="mt-4 text-xs text-gray-600 font-mono"></div>
+
+    <hr class="my-6 border-gray-300">
+
+    <h2 class="text-lg font-semibold text-gray-800 mb-2">📥 File bạn đã nhận:</h2>
+    <div id="receivedFiles" class="space-y-2 text-sm"></div>
+  </div>
+
+  <script>
+    async function calculateSHA256(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    const socket = io();
+
+    socket.on("connect", () => console.log("✅ Kết nối thành công"));
+    socket.on("status", msg => console.log("📢", msg));
+    socket.on("error", msg => alert("❌ " + msg));
+
+    socket.on("receive_file", data => {
+      const container = document.getElementById("receivedFiles");
+      const url = `/download/${data.file_id}_${data.filename}`;
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div class="p-3 bg-gray-100 rounded shadow-sm border">
+          <p><strong>${data.sender}</strong> đã gửi:</p>
+          <a href="${url}" download class="text-blue-600 underline">${data.filename}</a>
+          <p class="text-xs text-gray-600 mt-1">SHA-256: <code class="break-all">${data.sha256}</code></p>
+        </div>
+      `;
+      container.prepend(el);
+      alert(`📩 Bạn vừa nhận được file "${data.filename}" từ ${data.sender}`);
+    });
+
+    document.getElementById("sendFileForm").onsubmit = async (e) => {
+      e.preventDefault();
+
+      const receiver = document.getElementById("receiver").value;
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      if (!receiver || !file) {
+        alert("⚠️ Vui lòng chọn người nhận và file.");
+        return;
+      }
+
+      const sha256 = await calculateSHA256(file);
+      alert(`✅ SHA-256 của file: ${sha256}`);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const filedata = Array.from(new Uint8Array(arrayBuffer));
+
+      socket.emit("send_file", {
+        receiver: receiver,
+        filename: file.name,
+        filedata: filedata,
+        sha256: sha256
+      });
+
+      document.getElementById("senderHash").textContent = `🔐 SHA-256 của file bạn gửi: ${sha256}`;
+      fileInput.value = "";
+    };
+  </script>
+</body>
+</html>
